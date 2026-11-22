@@ -59,18 +59,51 @@ reload_hypr() {
   hyprctl reload >/dev/null 2>&1 && echo "  Reloaded Hyprland." || true
 }
 
-# Kando draws the radial menu. HELIOS works around it, never inside it: your menus and themes are yours.
+# Kando draws the radial menu. HELIOS works around it, never inside it: your menus are yours.
+# Installed per-user from Kando's own portable build (no sudo, no AUR), unless you have it already.
+KANDO_OPT="$HOME/.local/opt/kando"
+KANDO_ZIP_URL="https://github.com/kando-menu/kando/releases/download/v3.0.1/Kando-linux-x64-3.0.1.zip"
 ensure_kando() {
-  if command -v kando >/dev/null 2>&1 || [ -d "$HOME/.var/app/menu.kando.Kando" ]; then return 0; fi
-  local aur=""
-  for h in paru yay; do command -v "$h" >/dev/null 2>&1 && { aur="$h"; break; }; done
-  if [ -z "$aur" ] || ! has_tty; then
-    echo "  ${Y}Kando isn't installed.${R} HELIOS's radial menu needs it: https://kando.menu (on Arch: kando-bin from the AUR)."
-    return 0
+  if command -v kando >/dev/null 2>&1 || [ -x "$KANDO_OPT/kando" ] || [ -d "$HOME/.var/app/menu.kando.Kando" ]; then
+    echo "  Kando is here."
+  else
+    echo "  Fetching Kando (the radial menu, MIT, about 160 MB)"
+    curl -fL --progress-bar -o "$tmp/kando.zip" "$KANDO_ZIP_URL" || { echo "  ${Y}Couldn't download Kando.${R} Run this again later."; return 0; }
+    mkdir -p "$tmp/kando" && bsdtar -xf "$tmp/kando.zip" -C "$tmp/kando" 2>/dev/null || unzip -q "$tmp/kando.zip" -d "$tmp/kando"
+    local dir; dir=$(dirname "$(find "$tmp/kando" -maxdepth 3 -type f -name kando | head -n 1)")
+    [ -x "$dir/kando" ] || { echo "  ${Y}The Kando download looked wrong.${R}"; return 0; }
+    mkdir -p "$(dirname "$KANDO_OPT")" && rm -rf "$KANDO_OPT" && mv "$dir" "$KANDO_OPT"
+    mkdir -p "$(dirname "$BIN")" && ln -sfn "$KANDO_OPT/kando" "$(dirname "$BIN")/kando"
+    echo "  Installed Kando into $KANDO_OPT"
   fi
-  menu "Kando (the radial menu) isn't installed. Install kando-bin from the AUR with $aur?" "Install Kando" "Not now"
-  [ "$CHOICE" = 0 ] || { echo "  Skipped: install Kando later and HELIOS will find it."; return 0; }
-  "$aur" -S --needed kando-bin </dev/tty || echo "  Kando didn't install; HELIOS still works from the command line."
+  # HELIOS's own theme folders (new folders of ours; nothing of yours is touched)
+  local kconf="$CONF/kando"
+  [ -d "$HOME/.var/app/menu.kando.Kando/config/kando" ] && kconf="$HOME/.var/app/menu.kando.Kando/config/kando"
+  mkdir -p "$kconf/menu-themes" "$kconf/sound-themes"
+  rm -rf "$kconf/menu-themes/helios" "$kconf/sound-themes/helios"
+  cp -r "$OPT/data/kando/menu-themes/helios" "$kconf/menu-themes/helios"
+  cp -r "$OPT/data/kando/sound-themes/helios" "$kconf/sound-themes/helios"
+  # A fresh Kando starts in HELIOS's look; an existing one keeps your choice (pick HELIOS in its settings).
+  if [ ! -f "$kconf/config.json" ]; then
+    printf '{\n  "menuTheme": "helios",\n  "soundTheme": "helios"\n}\n' > "$kconf/config.json"
+    echo "  Kando will start with the HELIOS theme and sounds."
+  else
+    echo "  HELIOS's theme and sounds are in Kando's settings, ready to choose."
+  fi
+}
+
+# Speech models for dictation (Parakeet + MedASR, about 600 MB), fetched by HELIOS itself.
+ensure_speech() {
+
+  if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/helios/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8" ]; then
+    echo "  The speech models are here."; return 0
+  fi
+  if ! has_tty; then
+    echo "  Dictation needs its speech models (about 600 MB): run  helios dictate download"; return 0
+  fi
+  menu "Download the speech models for dictation now (about 600 MB)?" "Download" "Later"
+  [ "$CHOICE" = 0 ] || { echo "  Later: run  helios dictate download"; return 0; }
+  "$BIN" dictate download </dev/tty || echo "  It didn't finish: run  helios dictate download  to resume."
 }
 
 do_uninstall() {   # $1 = purge to remove settings and models too
@@ -78,6 +111,8 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   if systemd_ok; then systemctl --user disable --now helios.service >/dev/null 2>&1 || true; fi
   [ -f "$UNIT" ] && { rm -f "$UNIT"; systemd_ok && systemctl --user daemon-reload || true; }
   [ -e "$OPT" ] && { rm -rf "$OPT"; say "Removed $OPT"; found=1; }
+  local kconf="$CONF/kando"
+  rm -rf "$kconf/menu-themes/helios" "$kconf/sound-themes/helios" 2>/dev/null || true
   [ -L "$BIN" ] && rm -f "$BIN"
   [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; echo "  Removed its Hyprland bindings."; }
   unhook_hypr
@@ -120,6 +155,9 @@ do_install() {
 
   say "Kando"
   ensure_kando
+
+  say "Dictation"
+  ensure_speech
 
   if systemd_ok; then
     say "Starting the hub"
