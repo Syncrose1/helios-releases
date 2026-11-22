@@ -132,7 +132,7 @@ do_install() {
 
   say "${G}HELIOS is installed:${R}${B} $BIN"
   "$BIN" status 2>/dev/null | sed 's/^/  /' || true
-  echo "Super+\` opens the radial menu; hold Super+' to dictate."
+  echo "Super+H: tap for the typing area, hold and flick for everything else (flick down to dictate)."
   echo "Run the same line again any time to update or uninstall."
   if ! command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1 && ! [ -x "$HOME/.grok/bin/grok" ]; then
     echo "For AI, sign in to one of Claude Code, Codex or Grok Build, or run a local model on port 8081."
