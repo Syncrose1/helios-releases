@@ -73,6 +73,22 @@ ensure_speech() {
   "$BIN" dictate download </dev/tty || echo "  It didn't finish: run  helios dictate download  to resume."
 }
 
+# The voice that reads aloud (LuxTTS on the CPU, about 2 GB), set up by HELIOS's own script.
+ensure_voice() {
+  local setup="$OPT/data/voice/setup.sh"
+  [ -x "$setup" ] || return 0
+  if "$setup" --check; then
+    "$setup" >/dev/null 2>&1 || true   # (copies in any new voices)
+    echo "  The voice engine is here."; return 0
+  fi
+  if ! has_tty; then
+    echo "  Reading aloud needs its voice engine (about 2 GB): run  $setup"; return 0
+  fi
+  menu "Set up the voice for reading aloud now (about 2 GB)?" "Set up" "Later"
+  [ "$CHOICE" = 0 ] || { echo "  Later: run  $setup"; return 0; }
+  "$setup" </dev/tty || echo "  It didn't finish: run  $setup  to resume."
+}
+
 do_uninstall() {   # $1 = purge to remove settings and models too
   local found=""
   if systemd_ok; then systemctl --user disable --now helios.service >/dev/null 2>&1 || true; fi
@@ -122,6 +138,9 @@ do_install() {
 
   say "Dictation"
   ensure_speech
+
+  say "Voice"
+  ensure_voice
 
   if systemd_ok; then
     say "Starting the hub"
