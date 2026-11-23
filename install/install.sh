@@ -142,6 +142,56 @@ ensure_voice() {
   "$setup" </dev/tty || echo "  It didn't finish: run  $setup  to resume."
 }
 
+# Priority: HELIOS (its hub and the overlay that draws the radial and the launcher) should come
+# before your other work when the machine is busy. Process-priority managers match by name, and
+# CachyOS's ananicy rules put every "qs" (Quickshell) in its Service class, nice 10: the radial ends
+# up starved. The overlay runs as "helios-overlay"; this gives it, and the hub, their own rule.
+PRIORITY_RULE='# HELIOS: its hub and its overlay (the radial, the launcher) answer first. Written by its installer.
+{ "name": "helios", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
+{ "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
+PRIORITY_FILE=/etc/ananicy.d/helios.rules
+ananicy_unit() { local u; for u in ananicy-cpp ananicy; do systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl is-enabled "$u.service" >/dev/null 2>&1 && { echo "$u"; return 0; }; done; return 1; }
+ensure_priority() {
+  local unit
+  if unit="$(ananicy_unit)" && [ -d /etc/ananicy.d ]; then
+    if [ -f "$PRIORITY_FILE" ] && [ "$(cat "$PRIORITY_FILE")" = "$PRIORITY_RULE" ]; then
+      echo "  HELIOS's priority rule is in place ($unit)."; return 0
+    fi
+    echo "  $unit manages process priority here, and by default it would run HELIOS's overlay"
+    echo "  in the background. A rule for HELIOS (its hub and overlay only) fixes that."
+    if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
+      echo "  To add it, run this installer again in a terminal (it asks for your password)."; return 0
+    fi
+    menu "Add HELIOS's priority rule (needs your password)?" "Add it" "Skip"
+    [ "$CHOICE" = 0 ] || { echo "  Skipped: the radial may lag when the machine is busy."; return 0; }
+    if printf '%s\n' "$PRIORITY_RULE" | sudo tee "$PRIORITY_FILE" >/dev/null </dev/tty && sudo systemctl restart "$unit" </dev/tty; then
+      echo "  Added."
+    else
+      echo "  ${Y}That didn't finish.${R} HELIOS works anyway; it may lag when the machine is busy."
+    fi
+    return 0
+  fi
+  if systemctl is-active com.system76.Scheduler.service >/dev/null 2>&1; then
+    echo "  ${Y}system76-scheduler manages process priority here.${R} HELIOS doesn't change its config itself:"
+    echo "  to keep the radial responsive, give the processes  helios  and  helios-overlay  a high priority there."
+    return 0
+  fi
+  echo "  No priority manager to configure: HELIOS's service asks for its share itself."
+}
+
+remove_priority() {
+  [ -f "$PRIORITY_FILE" ] || return 0
+  local unit; unit="$(ananicy_unit || echo ananicy-cpp)"
+  if has_tty; then
+    menu "Remove HELIOS's priority rule from $PRIORITY_FILE (needs your password)?" "Remove it" "Leave it"
+    if [ "$CHOICE" = 0 ] && sudo rm -f "$PRIORITY_FILE" </dev/tty; then
+      sudo systemctl restart "$unit" </dev/tty 2>/dev/null || true
+      echo "  Removed its priority rule."; return 0
+    fi
+  fi
+  echo "  Its priority rule stays: remove it with  sudo rm $PRIORITY_FILE && sudo systemctl restart $unit"
+}
+
 do_uninstall() {   # $1 = purge to remove settings and models too
   local found=""
   if systemd_ok; then systemctl --user disable --now helios.service >/dev/null 2>&1 || true; fi
@@ -151,6 +201,7 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   rm -rf "$CONF/kando/menu-themes/helios" "$CONF/kando/sound-themes/helios" 2>/dev/null || true
   [ -L "$BIN" ] && rm -f "$BIN"
   [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; echo "  Removed its Hyprland bindings."; }
+  remove_priority
   unhook_hypr
   reload_hypr
   [ -n "$found" ] || say "HELIOS wasn't installed here, so there was nothing to remove."
@@ -167,6 +218,9 @@ do_install() {
   [ "$(uname -m)" = x86_64 ] || { echo "HELIOS is built for x86_64 only, for now." >&2; exit 1; }
   say "System packages"
   ensure_packages
+
+  say "Priority"
+  ensure_priority
 
   if [ -n "${HELIOS_TARBALL:-}" ]; then
     say "Installing the local build $HELIOS_TARBALL"
