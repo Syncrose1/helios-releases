@@ -7,7 +7,8 @@
 #   ... | bash -s -- uninstall      remove HELIOS, keep your settings and models
 #   ... | bash -s -- purge          remove HELIOS and everything it kept
 # HELIOS_NO_HYPR=1 skips reloading Hyprland (tests); HELIOS_TARBALL=<file> installs a local build;
-# HELIOS_NO_SERVICE=1 skips systemd (tests in a throwaway HOME).
+# HELIOS_NO_SERVICE=1 skips systemd (tests in a throwaway HOME); HELIOS_NO_PACKAGES=1 only lists
+# missing system packages (never runs pacman).
 set -euo pipefail
 
 REPO="Syncrose1/helios-releases"
@@ -57,6 +58,58 @@ unhook_hypr() {
 reload_hypr() {
   [ -z "${HELIOS_NO_HYPR:-}" ] && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && command -v hyprctl >/dev/null 2>&1 || return 0
   hyprctl reload >/dev/null 2>&1 && echo "  Reloaded Hyprland." || true
+}
+
+# What HELIOS runs, by the command it calls: command, package (Arch / CachyOS), what it's for.
+PACKAGES="
+qs quickshell the overlays: island, radial, answers
+grim grim screenshots (Ask, Point)
+tesseract tesseract reading text on screen (Point)
+- tesseract-data-eng English for tesseract
+magick imagemagick preparing screenshots for Point
+wtype wtype typing dictation into windows
+wl-copy wl-clipboard copying
+cliphist cliphist clipboard history
+bsdtar libarchive unpacking the speech models
+xdg-open xdg-utils opening files and links
+chromium chromium HELIOS's browser
+pw-cat pipewire playing sound (the voice)
+uv uv the voice engine's Python
+"
+
+# Anything missing is listed with what it's for; with your go-ahead (and your sudo password), the
+# system is updated first and the packages installed in the same step: pacman -Syu --needed.
+# (Never a bare -S on an old package database: on Arch that's a partial upgrade.)
+ensure_packages() {
+  command -v pacman >/dev/null 2>&1 || return 0
+  local missing=() why=() manual=() cmd pkg about
+  while read -r cmd pkg about; do
+    [ -n "${cmd:-}" ] || continue
+    if [ "$cmd" = - ]; then pacman -Qq "$pkg" >/dev/null 2>&1 && continue
+    else command -v "$cmd" >/dev/null 2>&1 && continue; fi
+    if pacman -Si "$pkg" >/dev/null 2>&1; then missing+=("$pkg"); why+=("$about")
+    else manual+=("$pkg ($about)"); fi
+  done <<< "$PACKAGES"
+  if [ ${#missing[@]} = 0 ] && [ ${#manual[@]} = 0 ]; then
+    echo "  Everything HELIOS needs is installed."; return 0
+  fi
+  local i
+  for i in "${!missing[@]}"; do printf '  %-20s %s%s%s\n' "${missing[$i]}" "$D" "${why[$i]}" "$R"; done
+  for i in "${manual[@]}"; do printf '  %s%s: not in your repositories, install it yourself (AUR)%s\n' "$Y" "$i" "$R"; done
+  [ ${#missing[@]} = 0 ] && return 0
+  local run="sudo pacman -Syu --needed ${missing[*]}"
+  if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
+    echo "  To install them (updating the system first):  $run"; return 0
+  fi
+  echo "  ${D}Installing needs your password (sudo), and updates the whole system first, so nothing is"
+  echo "  left half-updated. HELIOS works without these, but the parts listed won't.${R}"
+  menu "Update the system and install them now?" "Update and install" "Skip"
+  [ "$CHOICE" = 0 ] || { echo "  Skipped: later, run  $run"; return 0; }
+  if sudo pacman -Syu --needed "${missing[@]}" </dev/tty; then
+    echo "  Installed."
+  else
+    echo "  ${Y}That didn't finish.${R} HELIOS installs anyway; run  $run  when you can."
+  fi
 }
 
 # Speech models for dictation (Parakeet + MedASR, about 600 MB), fetched by HELIOS itself.
@@ -112,6 +165,9 @@ do_uninstall() {   # $1 = purge to remove settings and models too
 do_install() {
   [ "$(uname -s)" = Linux ] || { echo "HELIOS is for Linux (Hyprland)." >&2; exit 1; }
   [ "$(uname -m)" = x86_64 ] || { echo "HELIOS is built for x86_64 only, for now." >&2; exit 1; }
+  say "System packages"
+  ensure_packages
+
   if [ -n "${HELIOS_TARBALL:-}" ]; then
     say "Installing the local build $HELIOS_TARBALL"
     cp "$HELIOS_TARBALL" "$tmp/$ASSET"
