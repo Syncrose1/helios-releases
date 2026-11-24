@@ -146,9 +146,10 @@ ensure_voice() {
 # before your other work when the machine is busy. Process-priority managers match by name, and
 # CachyOS's ananicy rules put every "qs" (Quickshell) in its Service class, nice 10: the radial ends
 # up starved. The overlay runs as "helios-overlay"; this gives it, and the hub, their own rule.
-PRIORITY_RULE='# HELIOS: its hub, its overlay and its radial answer first. Written by its installer.
+PRIORITY_RULE='# HELIOS: its hub and its overlays (QML and Rune) answer first. Written by its installer.
 { "name": "helios", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
+{ "name": "helios-ui", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-radial", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
 PRIORITY_FILE=/etc/ananicy.d/helios.rules
 ananicy_unit() { local u; for u in ananicy-cpp ananicy; do systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl is-enabled "$u.service" >/dev/null 2>&1 && { echo "$u"; return 0; }; done; return 1; }
@@ -159,7 +160,7 @@ ensure_priority() {
       echo "  HELIOS's priority rule is in place ($unit)."; return 0
     fi
     echo "  $unit manages process priority here, and by default it would run HELIOS's overlay"
-    echo "  in the background. A rule for HELIOS (its hub, overlay and radial only) fixes that."
+    echo "  in the background. A rule for HELIOS (its hub and overlays only) fixes that."
     if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
       echo "  To add it, run this installer again in a terminal (it asks for your password)."; return 0
     fi
