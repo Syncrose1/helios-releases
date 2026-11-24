@@ -146,9 +146,10 @@ ensure_voice() {
 # before your other work when the machine is busy. Process-priority managers match by name, and
 # CachyOS's ananicy rules put every "qs" (Quickshell) in its Service class, nice 10: the radial ends
 # up starved. The overlay runs as "helios-overlay"; this gives it, and the hub, their own rule.
-PRIORITY_RULE='# HELIOS: its hub and its overlay (the radial, the launcher) answer first. Written by its installer.
+PRIORITY_RULE='# HELIOS: its hub, its overlay and its radial answer first. Written by its installer.
 { "name": "helios", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
-{ "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
+{ "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
+{ "name": "helios-radial", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
 PRIORITY_FILE=/etc/ananicy.d/helios.rules
 ananicy_unit() { local u; for u in ananicy-cpp ananicy; do systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl is-enabled "$u.service" >/dev/null 2>&1 && { echo "$u"; return 0; }; done; return 1; }
 ensure_priority() {
