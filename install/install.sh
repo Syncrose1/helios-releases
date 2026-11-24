@@ -159,13 +159,15 @@ ensure_priority() {
       echo "  HELIOS's priority rule is in place ($unit)."; return 0
     fi
     echo "  $unit manages process priority here, and by default it would run HELIOS's overlay"
-    echo "  in the background. A rule for HELIOS (its hub and overlay only) fixes that."
+    echo "  in the background. A rule for HELIOS (its hub, overlay and radial only) fixes that."
     if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
       echo "  To add it, run this installer again in a terminal (it asks for your password)."; return 0
     fi
     menu "Add HELIOS's priority rule (needs your password)?" "Add it" "Skip"
     [ "$CHOICE" = 0 ] || { echo "  Skipped: the radial may lag when the machine is busy."; return 0; }
-    if printf '%s\n' "$PRIORITY_RULE" | sudo tee "$PRIORITY_FILE" >/dev/null </dev/tty && sudo systemctl restart "$unit" </dev/tty; then
+    # The password first, from the terminal (sudo -v); then the rule goes in through the pipe.
+    # (Giving `sudo tee` the terminal as its input made tee read the keyboard instead of the rule.)
+    if sudo -v </dev/tty && printf '%s\n' "$PRIORITY_RULE" | sudo tee "$PRIORITY_FILE" >/dev/null && sudo systemctl restart "$unit" </dev/tty; then
       echo "  Added."
     else
       echo "  ${Y}That didn't finish.${R} HELIOS works anyway; it may lag when the machine is busy."
