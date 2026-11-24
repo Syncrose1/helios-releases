@@ -31,6 +31,7 @@ BIN="$HOME/.local/bin/helios"
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 HYPR="$CONF/hypr"
 UNIT="$CONF/systemd/user/helios.service"
+GUARD_UNIT="$CONF/systemd/user/helios-guard.service"
 MARK_BEGIN="-- >>> HELIOS (added by its installer; removed by its uninstaller)"
 MARK_END="-- <<< HELIOS"
 data_dirs() { printf '%s\n' "$CONF/helios" "${XDG_DATA_HOME:-$HOME/.local/share}/helios"; }
@@ -155,7 +156,8 @@ PRIORITY_RULE='# HELIOS: its hub and its overlays (QML and Rune) answer first. W
 { "name": "helios", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-ui", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
-{ "name": "helios-radial", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
+{ "name": "helios-radial", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
+{ "name": "helios-guard", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
 PRIORITY_FILE=/etc/ananicy.d/helios.rules
 ananicy_unit() { local u; for u in ananicy-cpp ananicy; do systemctl list-unit-files "$u.service" >/dev/null 2>&1 && systemctl is-enabled "$u.service" >/dev/null 2>&1 && { echo "$u"; return 0; }; done; return 1; }
 ensure_priority() {
@@ -203,8 +205,10 @@ remove_priority() {
 
 do_uninstall() {   # $1 = purge to remove settings and models too
   local found=""
-  if systemd_ok; then systemctl --user disable --now helios.service >/dev/null 2>&1 || true; fi
-  [ -f "$UNIT" ] && { rm -f "$UNIT"; systemd_ok && systemctl --user daemon-reload || true; }
+  if systemd_ok; then systemctl --user disable --now helios.service helios-guard.service >/dev/null 2>&1 || true; fi
+  [ -f "$UNIT" ] && rm -f "$UNIT"
+  [ -f "$GUARD_UNIT" ] && rm -f "$GUARD_UNIT"
+  systemd_ok && systemctl --user daemon-reload || true
   [ -e "$OPT" ] && { rm -rf "$OPT"; say "Removed $OPT"; found=1; }
   # (older versions put themes in Kando's folders: tidy those away)
   rm -rf "$CONF/kando/menu-themes/helios" "$CONF/kando/sound-themes/helios" 2>/dev/null || true
@@ -268,6 +272,14 @@ do_install() {
   if systemd_ok; then
     say "Starting the hub"
     mkdir -p "$(dirname "$UNIT")" && cp "$OPT/data/systemd/helios.service" "$UNIT"
+    # the guard (the machine's health), in its own unit, if this build has one
+    if [ -f "$OPT/data/systemd/helios-guard.service" ] && [ -x "$OPT/helios-guard" ]; then
+      cp "$OPT/data/systemd/helios-guard.service" "$GUARD_UNIT"
+      systemctl --user daemon-reload
+      systemctl --user enable helios-guard.service >/dev/null 2>&1 || true
+      systemctl --user restart helios-guard.service || true
+      note "The guard keeps watch on the machine's health."
+    fi
     systemctl --user daemon-reload
     systemctl --user enable helios.service >/dev/null 2>&1 || true
     systemctl --user restart helios.service
