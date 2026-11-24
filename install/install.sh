@@ -14,8 +14,13 @@ set -euo pipefail
 REPO="Syncrose1/helios-releases"
 REL="https://github.com/$REPO/releases/latest/download"
 ASSET="helios-linux-x64.tar.gz"
-B=$'\033[1m'; D=$'\033[2m'; G=$'\033[38;5;220m'; Y=$'\033[38;5;208m'; R=$'\033[0m'
-say() { printf '%s%s%s\n' "$B" "$*" "$R"; }
+# Ember (HELIOS's theme): the accent #FF6A2B, ink #F2EFEA, its quieter tiers
+B=$'\033[1m'; R=$'\033[0m'
+A=$'\033[38;2;255;106;43m'; I=$'\033[38;2;242;239;234m'; D=$'\033[38;2;150;148;144m'; Q=$'\033[38;2;95;94;92m'
+G="$A"; Y="$A"
+# a step: a diamond and its name; what happened sits under it, quieter (note)
+say() { printf '\n  %s◆%s %s%s%s%s\n' "$A" "$R" "$B" "$I" "$*" "$R"; }
+note() { printf '    %s%s%s\n' "$D" "$*" "$R"; }
 tmp="$(mktemp -d)"
 cleanup() { { printf '\033[?25h' >/dev/tty; } 2>/dev/null || true; rm -rf "$tmp"; }
 trap cleanup EXIT
@@ -41,23 +46,23 @@ hook_hypr() {
   local main="$HYPR/hyprland.lua" shared="$HYPR/user/shared.lua"
   if [ -f "$shared" ] && [ "$(grep -cF -- 'user/helios.lua' "$shared" || true)" != 0 ]; then return 0; fi
   if [ ! -f "$main" ]; then
-    echo "  No ~/.config/hypr/hyprland.lua (HELIOS needs Hyprland's Lua config, 0.55+): load $HYPR/user/helios.lua yourself."
+    note "No ~/.config/hypr/hyprland.lua (HELIOS needs Hyprland's Lua config, 0.55+): load $HYPR/user/helios.lua yourself."
     return 0
   fi
   [ "$(grep -cF -- "$MARK_BEGIN" "$main" || true)" != 0 ] && return 0
   printf '\n%s\ndo local f = os.getenv("HOME") .. "/.config/hypr/user/helios.lua"; local h = io.open(f, "r"); if h then h:close(); dofile(f) end end\n%s\n' \
     "$MARK_BEGIN" "$MARK_END" >> "$main"
-  echo "  Added a HELIOS block to the end of hyprland.lua."
+  note "Added a HELIOS block to the end of hyprland.lua."
 }
 unhook_hypr() {
   local main="$HYPR/hyprland.lua"
   [ -f "$main" ] && [ "$(grep -cF -- "$MARK_BEGIN" "$main" || true)" != 0 ] || return 0
   sed -i "\|^$MARK_BEGIN\$|,\|^$MARK_END\$|d" "$main"
-  echo "  Removed the HELIOS block from hyprland.lua."
+  note "Removed the HELIOS block from hyprland.lua."
 }
 reload_hypr() {
   [ -z "${HELIOS_NO_HYPR:-}" ] && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && command -v hyprctl >/dev/null 2>&1 || return 0
-  hyprctl reload >/dev/null 2>&1 && echo "  Reloaded Hyprland." || true
+  hyprctl reload >/dev/null 2>&1 && note "Reloaded Hyprland." || true
 }
 
 # What HELIOS runs, by the command it calls: command, package (Arch / CachyOS), what it's for.
@@ -91,7 +96,7 @@ ensure_packages() {
     else manual+=("$pkg ($about)"); fi
   done <<< "$PACKAGES"
   if [ ${#missing[@]} = 0 ] && [ ${#manual[@]} = 0 ]; then
-    echo "  Everything HELIOS needs is installed."; return 0
+    note "Everything HELIOS needs is installed."; return 0
   fi
   local i
   for i in "${!missing[@]}"; do printf '  %-20s %s%s%s\n' "${missing[$i]}" "$D" "${why[$i]}" "$R"; done
@@ -99,16 +104,16 @@ ensure_packages() {
   [ ${#missing[@]} = 0 ] && return 0
   local run="sudo pacman -Syu --needed ${missing[*]}"
   if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
-    echo "  To install them (updating the system first):  $run"; return 0
+    note "To install them (updating the system first):  $run"; return 0
   fi
-  echo "  ${D}Installing needs your password (sudo), and updates the whole system first, so nothing is"
-  echo "  left half-updated. HELIOS works without these, but the parts listed won't.${R}"
+  note "${D}Installing needs your password (sudo), and updates the whole system first, so nothing is"
+  note "left half-updated. HELIOS works without these, but the parts listed won't.${R}"
   menu "Update the system and install them now?" "Update and install" "Skip"
-  [ "$CHOICE" = 0 ] || { echo "  Skipped: later, run  $run"; return 0; }
+  [ "$CHOICE" = 0 ] || { note "Skipped: later, run  $run"; return 0; }
   if sudo pacman -Syu --needed "${missing[@]}" </dev/tty; then
-    echo "  Installed."
+    note "Installed."
   else
-    echo "  ${Y}That didn't finish.${R} HELIOS installs anyway; run  $run  when you can."
+    note "${Y}That didn't finish.${R} HELIOS installs anyway; run  $run  when you can."
   fi
 }
 
@@ -116,14 +121,14 @@ ensure_packages() {
 ensure_speech() {
 
   if [ -d "${XDG_DATA_HOME:-$HOME/.local/share}/helios/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8" ]; then
-    echo "  The speech models are here."; return 0
+    note "The speech models are here."; return 0
   fi
   if ! has_tty; then
-    echo "  Dictation needs its speech models (about 600 MB): run  helios dictate download"; return 0
+    note "Dictation needs its speech models (about 600 MB): run  helios dictate download"; return 0
   fi
   menu "Download the speech models for dictation now (about 600 MB)?" "Download" "Later"
-  [ "$CHOICE" = 0 ] || { echo "  Later: run  helios dictate download"; return 0; }
-  "$BIN" dictate download </dev/tty || echo "  It didn't finish: run  helios dictate download  to resume."
+  [ "$CHOICE" = 0 ] || { note "Later: run  helios dictate download"; return 0; }
+  "$BIN" dictate download </dev/tty || note "It didn't finish: run  helios dictate download  to resume."
 }
 
 # The voice that reads aloud (LuxTTS on the CPU, about 2 GB), set up by HELIOS's own script.
@@ -132,14 +137,14 @@ ensure_voice() {
   [ -x "$setup" ] || return 0
   if "$setup" --check; then
     "$setup" >/dev/null 2>&1 || true   # (copies in any new voices)
-    echo "  The voice engine is here."; return 0
+    note "The voice engine is here."; return 0
   fi
   if ! has_tty; then
-    echo "  Reading aloud needs its voice engine (about 2 GB): run  $setup"; return 0
+    note "Reading aloud needs its voice engine (about 2 GB): run  $setup"; return 0
   fi
   menu "Set up the voice for reading aloud now (about 2 GB)?" "Set up" "Later"
-  [ "$CHOICE" = 0 ] || { echo "  Later: run  $setup"; return 0; }
-  "$setup" </dev/tty || echo "  It didn't finish: run  $setup  to resume."
+  [ "$CHOICE" = 0 ] || { note "Later: run  $setup"; return 0; }
+  "$setup" </dev/tty || note "It didn't finish: run  $setup  to resume."
 }
 
 # Priority: HELIOS (its hub and the overlay that draws the radial and the launcher) should come
@@ -157,30 +162,30 @@ ensure_priority() {
   local unit
   if unit="$(ananicy_unit)" && [ -d /etc/ananicy.d ]; then
     if [ -f "$PRIORITY_FILE" ] && [ "$(cat "$PRIORITY_FILE")" = "$PRIORITY_RULE" ]; then
-      echo "  HELIOS's priority rule is in place ($unit)."; return 0
+      note "HELIOS's priority rule is in place ($unit)."; return 0
     fi
-    echo "  $unit manages process priority here, and by default it would run HELIOS's overlay"
-    echo "  in the background. A rule for HELIOS (its hub and overlays only) fixes that."
+    note "$unit manages process priority here, and by default it would run HELIOS's overlay"
+    note "in the background. A rule for HELIOS (its hub and overlays only) fixes that."
     if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
-      echo "  To add it, run this installer again in a terminal (it asks for your password)."; return 0
+      note "To add it, run this installer again in a terminal (it asks for your password)."; return 0
     fi
     menu "Add HELIOS's priority rule (needs your password)?" "Add it" "Skip"
-    [ "$CHOICE" = 0 ] || { echo "  Skipped: the radial may lag when the machine is busy."; return 0; }
+    [ "$CHOICE" = 0 ] || { note "Skipped: the radial may lag when the machine is busy."; return 0; }
     # The password first, from the terminal (sudo -v); then the rule goes in through the pipe.
     # (Giving `sudo tee` the terminal as its input made tee read the keyboard instead of the rule.)
     if sudo -v </dev/tty && printf '%s\n' "$PRIORITY_RULE" | sudo tee "$PRIORITY_FILE" >/dev/null && sudo systemctl restart "$unit" </dev/tty; then
-      echo "  Added."
+      note "Added."
     else
-      echo "  ${Y}That didn't finish.${R} HELIOS works anyway; it may lag when the machine is busy."
+      note "${Y}That didn't finish.${R} HELIOS works anyway; it may lag when the machine is busy."
     fi
     return 0
   fi
   if systemctl is-active com.system76.Scheduler.service >/dev/null 2>&1; then
-    echo "  ${Y}system76-scheduler manages process priority here.${R} HELIOS doesn't change its config itself:"
-    echo "  to keep the radial responsive, give the processes  helios  and  helios-overlay  a high priority there."
+    note "${Y}system76-scheduler manages process priority here.${R} HELIOS doesn't change its config itself:"
+    note "to keep the radial responsive, give the processes  helios  and  helios-overlay  a high priority there."
     return 0
   fi
-  echo "  No priority manager to configure: HELIOS's service asks for its share itself."
+  note "No priority manager to configure: HELIOS's service asks for its share itself."
 }
 
 remove_priority() {
@@ -190,10 +195,10 @@ remove_priority() {
     menu "Remove HELIOS's priority rule from $PRIORITY_FILE (needs your password)?" "Remove it" "Leave it"
     if [ "$CHOICE" = 0 ] && sudo rm -f "$PRIORITY_FILE" </dev/tty; then
       sudo systemctl restart "$unit" </dev/tty 2>/dev/null || true
-      echo "  Removed its priority rule."; return 0
+      note "Removed its priority rule."; return 0
     fi
   fi
-  echo "  Its priority rule stays: remove it with  sudo rm $PRIORITY_FILE && sudo systemctl restart $unit"
+  note "Its priority rule stays: remove it with  sudo rm $PRIORITY_FILE && sudo systemctl restart $unit"
 }
 
 do_uninstall() {   # $1 = purge to remove settings and models too
@@ -204,7 +209,7 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   # (older versions put themes in Kando's folders: tidy those away)
   rm -rf "$CONF/kando/menu-themes/helios" "$CONF/kando/sound-themes/helios" 2>/dev/null || true
   [ -L "$BIN" ] && rm -f "$BIN"
-  [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; echo "  Removed its Hyprland bindings."; }
+  [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; note "Removed its Hyprland bindings."; }
   remove_priority
   unhook_hypr
   reload_hypr
@@ -227,23 +232,27 @@ do_install() {
   ensure_priority
 
   if [ -n "${HELIOS_TARBALL:-}" ]; then
-    say "Installing the local build $HELIOS_TARBALL"
+    say "Getting HELIOS"
     cp "$HELIOS_TARBALL" "$tmp/$ASSET"
+    note "A local build: $HELIOS_TARBALL"
   else
-    say "Downloading HELIOS"
-    curl -fL --progress-bar -o "$tmp/$ASSET" "$REL/$ASSET"
+    say "Getting HELIOS"
+    curl -fsSL -o "$tmp/$ASSET" "$REL/$ASSET"
+    note "Downloaded ($(( $(stat -c %s "$tmp/$ASSET") / 1048576 )) MB)."
   fi
   mkdir -p "$tmp/x" && tar -xzf "$tmp/$ASSET" -C "$tmp/x"
   [ -x "$tmp/x/helios/helios" ] || { echo "The download didn't contain HELIOS." >&2; exit 1; }
 
-  say "Installing into $OPT"
+  say "Installing"
+  note "Into $OPT"
   mkdir -p "$(dirname "$OPT")" && rm -rf "$OPT.new" && mv "$tmp/x/helios" "$OPT.new"
   rm -rf "$OPT" && mv "$OPT.new" "$OPT"      # the running hub keeps its old file until it restarts
   mkdir -p "$(dirname "$BIN")" && ln -sfn "$OPT/helios" "$BIN"
 
   # settings: written once, never overwritten
   mkdir -p "$CONF/helios"
-  [ -f "$CONF/helios/config.toml" ] || { cp "$OPT/data/config.toml" "$CONF/helios/config.toml"; echo "  Settings: $CONF/helios/config.toml"; }
+  if [ -f "$CONF/helios/config.toml" ]; then note "Your settings are kept: $CONF/helios/config.toml"
+  else cp "$OPT/data/config.toml" "$CONF/helios/config.toml"; note "Settings: $CONF/helios/config.toml"; fi
 
   say "Hooking into Hyprland"
   mkdir -p "$HYPR/user" && cp "$OPT/data/hypr/helios.lua" "$HYPR/user/helios.lua"
@@ -262,16 +271,23 @@ do_install() {
     systemctl --user daemon-reload
     systemctl --user enable helios.service >/dev/null 2>&1 || true
     systemctl --user restart helios.service
-    sleep 0.5
+    # wait for the new hub to answer (asking at once could reach the old one, on its way out)
+    local want i; want="$(cat "$OPT/VERSION" 2>/dev/null || true)"
+    for i in $(seq 1 40); do [ "$("$BIN" status 2>/dev/null | grep -cF -- "$want")" -gt 0 ] && break; sleep 0.25; done
+    "$BIN" status 2>/dev/null | while IFS= read -r l; do note "$l"; done || true
   fi
 
-  say "${G}HELIOS is installed:${R}${B} $BIN"
-  "$BIN" status 2>/dev/null | sed 's/^/  /' || true
-  echo "Super+H: the radial at your pointer. Move through an item to choose it; Esc dismisses."
-  echo "Run the same line again any time to update or uninstall."
+  # the end: what you've got, and the one key
+  local rule; rule="$(printf '━%.0s' $(seq 1 46))"
+  printf '\n  %s%s%s\n' "$A" "$rule" "$R"
+  printf '  %sHELIOS %s is ready%s  %s%s%s\n' "$B$I" "$(cat "$OPT/VERSION" 2>/dev/null)" "$R" "$Q" "$BIN" "$R"
+  printf '  %sSuper+H%s  %sthe radial, at your pointer: move through an item to choose it%s\n' "$A$B" "$R" "$D" "$R"
+  printf '  %s       %s  %stype, or Enter, for the launcher · Esc dismisses%s\n' "$A" "$R" "$D" "$R"
+  printf '  %sAgain  %s  %srun the same line to update or uninstall%s\n' "$I" "$R" "$D" "$R"
   if ! command -v claude >/dev/null 2>&1 && ! command -v codex >/dev/null 2>&1 && ! [ -x "$HOME/.grok/bin/grok" ]; then
-    echo "For AI, sign in to one of Claude Code, Codex or Grok Build, or run a local model on port 8081."
+    printf '  %sAI     %s  %ssign in to Claude Code, Codex or Grok Build, or run a local model on 8081%s\n' "$I" "$R" "$D" "$R"
   fi
+  echo
 }
 
 # ── the menu: up/down (or j/k, or a number) to move, Enter to choose, Esc or q to leave ──
@@ -308,23 +324,33 @@ menu() {   # menu <question> <option>...: sets CHOICE to the chosen index (the l
   echo >/dev/tty
 }
 
-# the name, big, in sunlight (and plain on a terminal too narrow for it)
+# the name, big: H in the accent, ELIOS grey, the letters' edges (the box-drawing lines) near black
+# (plain on a terminal too narrow for it). Coloured by byte runs, so the locale doesn't matter.
+ART_H='██╗  ██╗
+██║  ██║
+███████║
+██╔══██║
+██║  ██║
+╚═╝  ╚═╝'
+ART_E='███████╗██╗     ██╗ ██████╗ ███████╗
+██╔════╝██║     ██║██╔═══██╗██╔════╝
+█████╗  ██║     ██║██║   ██║███████╗
+██╔══╝  ██║     ██║██║   ██║╚════██║
+███████╗███████╗██║╚██████╔╝███████║
+╚══════╝╚══════╝╚═╝ ╚═════╝ ╚══════╝'
+paint() {   # paint <body colour> <edge colour>: the blocks in one, everything else in the other
+  sed "s/^/$2/; s/\(█\)\{1,\}/$1&$2/g; s/\$/$R/"
+}
 banner() {
-  local cols shades=(196 202 208 214 220 226) i=0 line
+  local cols h e edge_h edge_e grey
   cols="$( { tput cols </dev/tty; } 2>/dev/null || echo 80)"
+  edge_h=$'\033[38;2;110;42;14m'; grey=$'\033[38;2;160;158;154m'; edge_e=$'\033[38;2;38;38;42m'
   echo >/dev/tty
   if [ "$cols" -ge 50 ]; then
-    while IFS= read -r line; do printf '  \033[38;5;%sm%s%s\n' "${shades[$i]}" "$line" "$R" >/dev/tty; i=$((i + 1)); done <<'ART'
-██╗  ██╗███████╗██╗     ██╗ ██████╗ ███████╗
-██║  ██║██╔════╝██║     ██║██╔═══██╗██╔════╝
-███████║█████╗  ██║     ██║██║   ██║███████╗
-██╔══██║██╔══╝  ██║     ██║██║   ██║╚════██║
-██║  ██║███████╗███████╗██║╚██████╔╝███████║
-╚═╝  ╚═╝╚══════╝╚══════╝╚═╝ ╚═════╝ ╚══════╝
-ART
-    printf '  %*s%s%s%s\n' 10 '' "$D" "By Syncra (Raahat Shah)" "$R" >/dev/tty
+    paste -d '' <(printf '%s\n' "$ART_H" | paint "$A" "$edge_h") <(printf '%s\n' "$ART_E" | paint "$grey" "$edge_e") | sed 's/^/  /' >/dev/tty
+    printf '  %*s%s%s%s\n' 12 '' "$D" "By Syncra (Raahat Shah)" "$R" >/dev/tty
   else
-    printf '  %sH E L I O S%s\n  %sBy Syncra (Raahat Shah)%s\n' "$G$B" "$R" "$D" "$R" >/dev/tty
+    printf '  %sH%s %sE L I O S%s\n  %sBy Syncra (Raahat Shah)%s\n' "$A$B" "$R" "$I$B" "$R" "$D" "$R" >/dev/tty
   fi
 }
 
