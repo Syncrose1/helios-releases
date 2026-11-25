@@ -282,6 +282,8 @@ do_install() {
     fi
     systemctl --user daemon-reload
     systemctl --user enable helios.service >/dev/null 2>&1 || true
+    # the Shell runs in its own unit the hub starts: stop it, so the new hub starts the new Shell
+    systemctl --user stop helios-shell >/dev/null 2>&1 || true
     systemctl --user restart helios.service
     # wait for the new hub to answer (asking at once could reach the old one, on its way out)
     local want i; want="$(cat "$OPT/VERSION" 2>/dev/null || true)"
