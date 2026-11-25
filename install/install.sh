@@ -68,7 +68,6 @@ reload_hypr() {
 
 # What HELIOS runs, by the command it calls: command, package (Arch / CachyOS), what it's for.
 PACKAGES="
-qs quickshell the overlays: island, radial, answers
 grim grim screenshots (Ask, Point)
 tesseract tesseract reading text on screen (Point)
 - tesseract-data-eng English for tesseract
@@ -148,13 +147,12 @@ ensure_voice() {
   "$setup" </dev/tty || note "It didn't finish: run  $setup  to resume."
 }
 
-# Priority: HELIOS (its hub and the overlay that draws the radial and the launcher) should come
-# before your other work when the machine is busy. Process-priority managers match by name, and
-# CachyOS's ananicy rules put every "qs" (Quickshell) in its Service class, nice 10: the radial ends
-# up starved. The overlay runs as "helios-overlay"; this gives it, and the hub, their own rule.
-PRIORITY_RULE='# HELIOS: its hub and its overlays (QML and Rune) answer first. Written by its installer.
+# Priority: HELIOS (its hub and helios-ui, which draws the radial and the launcher) should come
+# before your other work when the machine is busy. Process-priority managers match by name and
+# can file an unknown process under a background class, where the radial ends up starved; this
+# gives HELIOS's processes their own rule.
+PRIORITY_RULE='# HELIOS: its hub and its overlays answer first. Written by its installer.
 { "name": "helios", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
-{ "name": "helios-overlay", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-ui", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-radial", "nice": -6, "ioclass": "best-effort", "ionice": 2 }
 { "name": "helios-guard", "nice": -6, "ioclass": "best-effort", "ionice": 2 }'
@@ -184,7 +182,7 @@ ensure_priority() {
   fi
   if systemctl is-active com.system76.Scheduler.service >/dev/null 2>&1; then
     note "${Y}system76-scheduler manages process priority here.${R} HELIOS doesn't change its config itself:"
-    note "to keep the radial responsive, give the processes  helios  and  helios-overlay  a high priority there."
+    note "to keep the radial responsive, give the processes  helios  and  helios-ui  a high priority there."
     return 0
   fi
   note "No priority manager to configure: HELIOS's service asks for its share itself."
