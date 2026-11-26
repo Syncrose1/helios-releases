@@ -225,6 +225,46 @@ ensure_firewall() {
   note "No firewall in the way of Fabric."
 }
 
+# Cameras from other devices (Superposition): shown here through v4l2loopback, one device labelled
+# "HELIOS camera" (crates/helios-platform/src/camera.rs looks for that label)
+camera_ready() { grep -lqF "HELIOS camera" /sys/class/video4linux/*/name 2>/dev/null; }
+ensure_camera() {
+  if camera_ready; then note "Cameras from your other devices can be shown here."; return 0; fi
+  if ! modinfo v4l2loopback >/dev/null 2>&1; then
+    note "To use your other devices' cameras here, install v4l2loopback (on Arch: v4l2loopback-dkms),"
+    note "then run this installer again. Lending this device's own camera works without it."
+    return 0
+  fi
+  if lsmod | grep -q '^v4l2loopback'; then
+    note "v4l2loopback is already loaded for something else; after the next restart HELIOS's camera"
+    note "settings apply (if you allow them below)."
+  fi
+  if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
+    note "To show your other devices' cameras here, run this installer again in a terminal."
+    return 0
+  fi
+  menu "Let this device show your other devices' cameras to its apps (needs your password)?" "Set it up" "Skip"
+  [ "$CHOICE" = 0 ] || { note "Skipped: other devices' cameras won't show here (this one's can still be lent)."; return 0; }
+  local ok=1
+  sudo -v </dev/tty || ok=0
+  if [ "$ok" = 1 ]; then
+    printf 'options v4l2loopback devices=1 video_nr=42 card_label="HELIOS camera" exclusive_caps=1\n' | sudo tee /etc/modprobe.d/helios-camera.conf >/dev/null || ok=0
+    printf 'v4l2loopback\n' | sudo tee /etc/modules-load.d/helios-camera.conf >/dev/null || ok=0
+    lsmod | grep -q '^v4l2loopback' || sudo modprobe v4l2loopback </dev/tty >/dev/null 2>&1 || ok=0
+  fi
+  if [ "$ok" = 1 ] && camera_ready; then note "Done: borrowed cameras appear in every app's camera list as \"HELIOS camera\".";
+  elif [ "$ok" = 1 ]; then note "Set up: it takes effect after a restart.";
+  else note "${Y}That didn't finish.${R} Other devices' cameras won't show here yet."; fi
+}
+remove_camera() {
+  [ -f /etc/modprobe.d/helios-camera.conf ] || [ -f /etc/modules-load.d/helios-camera.conf ] || return 0
+  if has_tty; then
+    menu "Remove HELIOS's camera settings (needs your password)?" "Remove them" "Leave them"
+    if [ "$CHOICE" = 0 ]; then sudo rm -f /etc/modprobe.d/helios-camera.conf /etc/modules-load.d/helios-camera.conf </dev/tty; note "Removed (v4l2loopback stays until the next restart)."; return 0; fi
+  fi
+  note "HELIOS's camera settings stay: /etc/modprobe.d/helios-camera.conf, /etc/modules-load.d/helios-camera.conf"
+}
+
 remove_firewall() {
   systemctl is-active ufw >/dev/null 2>&1 || return 0
   grep -qF 'HELIOS-Fabric' /etc/ufw/user.rules 2>/dev/null || return 0
@@ -264,6 +304,7 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; note "Removed its Hyprland bindings."; }
   remove_priority
   remove_firewall
+  remove_camera
   unhook_hypr
   reload_hypr
   [ -n "$found" ] || say "HELIOS wasn't installed here, so there was nothing to remove."
@@ -284,6 +325,7 @@ do_install() {
   say "Priority"
   ensure_priority
   ensure_firewall
+  ensure_camera
 
   if [ -n "${HELIOS_TARBALL:-}" ]; then
     say "Getting HELIOS"
