@@ -188,6 +188,56 @@ ensure_priority() {
   note "No priority manager to configure: HELIOS's service asks for its share itself."
 }
 
+# Fabric (HELIOS across your devices) talks only over the tailnet: QUIC on 47485/udp and the
+# "who are you?" answer on 47486/tcp, on the tailscale interface alone (never the LAN). A firewall
+# that drops them there gets two rules, with your go-ahead and your password.
+FABRIC_RULES=("47485 proto udp" "47486 proto tcp")
+ufw_lets_fabric_in() {
+  local rules=/etc/ufw/user.rules
+  [ -r "$rules" ] || return 1
+  # the whole tailnet already allowed, or Fabric's two ports on it
+  grep -qE -- '-A ufw-user-input -i tailscale0 -j ACCEPT' "$rules" && return 0
+  grep -cF -- '--dport 47485 -j ACCEPT' "$rules" >/dev/null && grep -cF -- '--dport 47486 -j ACCEPT' "$rules" >/dev/null
+}
+ensure_firewall() {
+  if systemctl is-active ufw >/dev/null 2>&1; then
+    if ufw_lets_fabric_in; then note "The firewall lets Fabric in on your tailnet."; return 0; fi
+    note "ufw is on and would stop your other devices reaching this one over the tailnet."
+    note "Two rules fix that: Fabric's ports, on the tailscale interface only (not your LAN)."
+    if [ -n "${HELIOS_NO_PACKAGES:-}" ] || ! has_tty; then
+      note "To add them, run this installer again in a terminal, or:"
+      local r; for r in "${FABRIC_RULES[@]}"; do note "  sudo ufw allow in on tailscale0 to any port $r comment HELIOS-Fabric"; done
+      return 0
+    fi
+    menu "Let Fabric in on your tailnet (needs your password)?" "Add the rules" "Skip"
+    [ "$CHOICE" = 0 ] || { note "Skipped: your devices won't reach this one (it can still reach them)."; return 0; }
+    local ok=1 r
+    sudo -v </dev/tty || ok=0
+    if [ "$ok" = 1 ]; then for r in "${FABRIC_RULES[@]}"; do sudo ufw allow in on tailscale0 to any port $r comment HELIOS-Fabric </dev/tty >/dev/null || ok=0; done; fi
+    if [ "$ok" = 1 ]; then note "Added."; else note "${Y}That didn't finish.${R} Fabric will only reach out from here."; fi
+    return 0
+  fi
+  if systemctl is-active firewalld >/dev/null 2>&1; then
+    note "${Y}firewalld is on.${R} For your devices to reach this one, allow 47485/udp and 47486/tcp"
+    note "on the tailscale0 interface's zone (HELIOS doesn't change firewalld itself)."
+    return 0
+  fi
+  note "No firewall in the way of Fabric."
+}
+
+remove_firewall() {
+  systemctl is-active ufw >/dev/null 2>&1 || return 0
+  grep -qF 'HELIOS-Fabric' /etc/ufw/user.rules 2>/dev/null || return 0
+  if has_tty; then
+    menu "Remove Fabric's firewall rules (needs your password)?" "Remove them" "Leave them"
+    if [ "$CHOICE" = 0 ]; then
+      local r; for r in "${FABRIC_RULES[@]}"; do sudo ufw delete allow in on tailscale0 to any port $r </dev/tty >/dev/null 2>&1 || true; done
+      note "Removed Fabric's firewall rules."; return 0
+    fi
+  fi
+  note "Fabric's firewall rules stay: sudo ufw delete allow in on tailscale0 to any port 47485 proto udp (and 47486 proto tcp)"
+}
+
 remove_priority() {
   [ -f "$PRIORITY_FILE" ] || return 0
   local unit; unit="$(ananicy_unit || echo ananicy-cpp)"
@@ -213,6 +263,7 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   [ -L "$BIN" ] && rm -f "$BIN"
   [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; note "Removed its Hyprland bindings."; }
   remove_priority
+  remove_firewall
   unhook_hypr
   reload_hypr
   [ -n "$found" ] || say "HELIOS wasn't installed here, so there was nothing to remove."
@@ -232,6 +283,7 @@ do_install() {
 
   say "Priority"
   ensure_priority
+  ensure_firewall
 
   if [ -n "${HELIOS_TARBALL:-}" ]; then
     say "Getting HELIOS"
