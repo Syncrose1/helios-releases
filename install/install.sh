@@ -34,6 +34,25 @@ UNIT="$CONF/systemd/user/helios.service"
 GUARD_UNIT="$CONF/systemd/user/helios-guard.service"
 MARK_BEGIN="-- >>> HELIOS (added by its installer; removed by its uninstaller)"
 MARK_END="-- <<< HELIOS"
+APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+ICONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
+# HELIOS in your launcher (an entry, its icon; its own windows get the icon too), if this build ships them
+install_entries() {
+  [ -d "$OPT/data/applications" ] || return 0
+  mkdir -p "$APPS_DIR"
+  local f; for f in "$OPT"/data/applications/*.desktop; do sed "s|@BIN@|$BIN|g" "$f" > "$APPS_DIR/$(basename "$f")"; done
+  if [ -d "$OPT/data/icons" ]; then
+    local d; for d in "$OPT"/data/icons/*/; do mkdir -p "$ICONS_DIR/$(basename "$d")/apps" && cp "$d"sh.raahat.helios.* "$ICONS_DIR/$(basename "$d")/apps/"; done
+    command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -q -t "$ICONS_DIR" >/dev/null 2>&1 || true
+  fi
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$APPS_DIR" >/dev/null 2>&1 || true
+  note "HELIOS is in your app launcher, with its icon."
+}
+remove_entries() {
+  rm -f "$APPS_DIR"/sh.raahat.helios*.desktop 2>/dev/null || true
+  rm -f "$ICONS_DIR"/*/apps/sh.raahat.helios.* 2>/dev/null || true
+  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$APPS_DIR" >/dev/null 2>&1 || true
+}
 data_dirs() { printf '%s\n' "$CONF/helios" "${XDG_DATA_HOME:-$HOME/.local/share}/helios"; }
 has_tty() { { : </dev/tty; } 2>/dev/null; }
 systemd_ok() { [ -z "${HELIOS_NO_SERVICE:-}" ] && command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; }
@@ -301,6 +320,7 @@ do_uninstall() {   # $1 = purge to remove settings and models too
   # (older versions put themes in Kando's folders: tidy those away)
   rm -rf "$CONF/kando/menu-themes/helios" "$CONF/kando/sound-themes/helios" 2>/dev/null || true
   [ -L "$BIN" ] && rm -f "$BIN"
+  remove_entries
   [ -f "$HYPR/user/helios.lua" ] && { rm -f "$HYPR/user/helios.lua"; note "Removed its Hyprland bindings."; }
   remove_priority
   remove_firewall
@@ -349,6 +369,9 @@ do_install() {
   mkdir -p "$CONF/helios"
   if [ -f "$CONF/helios/config.toml" ]; then note "Your settings are kept: $CONF/helios/config.toml"
   else cp "$OPT/data/config.toml" "$CONF/helios/config.toml"; note "Settings: $CONF/helios/config.toml"; fi
+
+  say "Your app launcher"
+  install_entries
 
   say "Hooking into Hyprland"
   mkdir -p "$HYPR/user" && cp "$OPT/data/hypr/helios.lua" "$HYPR/user/helios.lua"
